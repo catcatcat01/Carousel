@@ -2,7 +2,7 @@ import './style.scss';
 import React, { useMemo } from 'react';
 import { dashboard, bitable, DashboardState, FieldType, IAttachmentField, IFieldMeta, ITable } from "@lark-base-open/js-sdk";
 import { Button, Select, InputNumber, Switch } from '@douyinfe/semi-ui';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import classnames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { Item } from '../Item';
@@ -82,6 +82,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
   const [slides, setSlides] = useState<ISlide[]>([]);
   const [index, setIndex] = useState(0);
   const playRef = useRef<any>();
+  const playTimeout = useRef<any>();
   const refreshRef = useRef<any>();
 
   const color = config.color || 'var(--ccm-chart-N700)';
@@ -238,19 +239,42 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     };
   }, [config.tableId, config.viewId, config.titleFieldId, config.descFieldId, config.imageFieldId, config.limit, config.refreshMs]);
 
+  const planNext = useCallback(() => {
+    const delay = Math.max(500, config.intervalMs || 3000);
+    if (!slides.length) return;
+    const next = (index + 1) % slides.length;
+    clearTimeout(playTimeout.current);
+    const target = slides[next];
+    if (target.imageUrl) {
+      const img = new Image();
+      let proceeded = false;
+      const proceed = () => {
+        if (proceeded) return;
+        proceeded = true;
+        setIndex(next);
+        playTimeout.current = setTimeout(planNext, delay);
+      };
+      img.onload = proceed;
+      img.onerror = proceed;
+      img.src = target.imageUrl as string;
+      playTimeout.current = setTimeout(proceed, Math.min(1500, delay));
+    } else {
+      playTimeout.current = setTimeout(() => {
+        setIndex(next);
+        planNext();
+      }, delay);
+    }
+  }, [slides, index, config.intervalMs]);
+
   useEffect(() => {
-    if (playRef.current) clearInterval(playRef.current);
-    playRef.current = setInterval(() => {
-      setIndex(v => {
-        const next = v + 1;
-        if (!slides.length) return 0;
-        return next % slides.length;
-      });
-    }, Math.max(1000, config.intervalMs || 3000));
+    clearTimeout(playTimeout.current);
+    if (slides.length) {
+      playTimeout.current = setTimeout(planNext, Math.max(500, config.intervalMs || 3000));
+    }
     return () => {
-      if (playRef.current) clearInterval(playRef.current);
+      clearTimeout(playTimeout.current);
     };
-  }, [slides.length, config.intervalMs]);
+  }, [slides.length, config.intervalMs, planNext]);
 
   if (!slides.length) {
     return (
