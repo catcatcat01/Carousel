@@ -152,9 +152,18 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
       const descFieldId = config.descFieldId;
       const imageFieldId = config.imageFieldId;
 
-      const titleField = titleFieldId ? await (table as any).getField(titleFieldId) : null;
-      const descField = descFieldId ? await (table as any).getField(descFieldId) : null;
-      const imageField = imageFieldId ? (await (table as any).getField(imageFieldId) as IAttachmentField) : null;
+      let titleField: any = null;
+      let descField: any = null;
+      let imageField: IAttachmentField | null = null;
+      try {
+        if (titleFieldId) titleField = await (table as any).getField(titleFieldId);
+      } catch (e) {}
+      try {
+        if (descFieldId) descField = await (table as any).getField(descFieldId);
+      } catch (e) {}
+      try {
+        if (imageFieldId) imageField = await (table as any).getField(imageFieldId) as IAttachmentField;
+      } catch (e) {}
 
       const takeIds = recordIds.slice(0, Math.max(1, config.limit || 10));
 
@@ -188,6 +197,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
       setSlides(result);
       setIndex(0);
     } catch (e) {
+      console.error(e);
       setSlides([]);
     }
   };
