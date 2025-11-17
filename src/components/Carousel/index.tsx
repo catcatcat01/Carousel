@@ -88,6 +88,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
   const playRef = useRef<any>();
   const playTimeout = useRef<any>();
   const refreshRef = useRef<any>();
+  const lastIdsRef = useRef<string[]>([]);
 
   const color = config.color || 'var(--ccm-chart-N700)';
 
@@ -268,8 +269,14 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
           result.push({ id: rid, title: '', desc: '', imageUrl: undefined });
         }
       }
+      const same = lastIdsRef.current.length === takeIds.length && lastIdsRef.current.every((id, i) => id === takeIds[i]);
+      lastIdsRef.current = takeIds.slice();
       setSlides(result);
-      setIndex(0);
+      if (!same) {
+        setIndex(0);
+      } else {
+        setIndex(v => Math.min(v, result.length ? result.length - 1 : 0));
+      }
     } catch (e) {
       console.error(e);
       setSlides([]);
