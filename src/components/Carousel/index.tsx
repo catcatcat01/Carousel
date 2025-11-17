@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Item } from '../Item';
 import { ColorPicker } from '../ColorPicker';
 import { useConfig } from '../../hooks';
+import dayjs from 'dayjs';
 
 interface ICarouselConfig {
   tableId?: string;
@@ -15,6 +16,8 @@ interface ICarouselConfig {
   titleFieldId?: string;
   descFieldId?: string;
   imageFieldId?: string;
+  timeFieldId?: string;
+  latestFirst?: boolean;
   limit: number;
   intervalMs: number;
   refreshMs: number;
@@ -37,6 +40,7 @@ export default function Carousel(props: { bgColor: string }) {
     refreshMs: 8000,
     color: 'var(--ccm-chart-N700)',
     showIndicators: true,
+    latestFirst: true,
   });
 
   const isCreate = dashboard.state === DashboardState.Create;
@@ -146,6 +150,29 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     return undefined;
   };
 
+  const toTimestamp = (val: any): number => {
+    if (val === null || val === undefined) return 0;
+    const type = typeof val;
+    if (type === 'number') return val as number;
+    if (type === 'string') {
+      const s = (val as string).trim();
+      const d = dayjs(s);
+      if (d.isValid()) return d.valueOf();
+      const n = Number(s);
+      return isNaN(n) ? 0 : n;
+    }
+    if (Array.isArray(val)) return toTimestamp(toPlainText(val));
+    if (type === 'object') {
+      const obj = val as any;
+      if ('value' in obj && obj.value != null) return toTimestamp(obj.value);
+      if ('text' in obj && obj.text != null) return toTimestamp(obj.text);
+      if ('name' in obj && obj.name != null) return toTimestamp(obj.name);
+      if ('title' in obj && obj.title != null) return toTimestamp(obj.title);
+      return 0;
+    }
+    return 0;
+  };
+
   const loadData = async () => {
     try {
       let table: ITable | null = null;
@@ -159,7 +186,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
       try {
         if (viewId && (table as any).getView) {
           const view = await (table as any).getView(viewId);
-          recordIds = await (view as any).getVisibleRecordIdList();
+          recordIds = await (view as any).getRecordIdList();
         }
       } catch (_) {}
       if (!recordIds.length) {
@@ -170,10 +197,12 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
       const titleFieldId = config.titleFieldId || allFieldMeta.find(v => v.isPrimary)?.id;
       const descFieldId = config.descFieldId;
       const imageFieldId = config.imageFieldId;
+      const timeFieldId = config.timeFieldId;
 
       let titleField: any = null;
       let descField: any = null;
       let imageField: IAttachmentField | null = null;
+      let timeField: any = null;
       try {
         if (titleFieldId) titleField = await (table as any).getField(titleFieldId);
       } catch (e) {}
@@ -183,8 +212,25 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
       try {
         if (imageFieldId) imageField = await (table as any).getField(imageFieldId) as IAttachmentField;
       } catch (e) {}
+      try {
+        if (timeFieldId) timeField = await (table as any).getField(timeFieldId);
+      } catch (e) {}
 
-      const takeIds = recordIds.slice(0, Math.max(1, config.limit || 10));
+      let sortedIds = recordIds.slice();
+      if (timeField) {
+        const pairs: { id: string, ts: number }[] = [];
+        for (const rid of sortedIds) {
+          let ts = 0;
+          try {
+            const v = await (timeField as any).getValue(rid);
+            ts = toTimestamp(v);
+          } catch (_) {}
+          pairs.push({ id: rid, ts });
+        }
+        pairs.sort((a, b) => (config.latestFirst ? b.ts - a.ts : a.ts - b.ts));
+        sortedIds = pairs.map(p => p.id);
+      }
+      const takeIds = sortedIds.slice(0, Math.max(1, config.limit || 10));
 
       const result: ISlide[] = [];
       for (const rid of takeIds) {
@@ -239,6 +285,19 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     };
   }, [config.tableId, config.viewId, config.titleFieldId, config.descFieldId, config.imageFieldId, config.limit, config.refreshMs]);
 
+  const preloadedRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!slides.length) return;
+    const next = (index + 1) % slides.length;
+    const url = slides[next].imageUrl;
+    if (url && !preloadedRef.current[url]) {
+      const img = new Image();
+      img.onload = () => { preloadedRef.current[url] = true; };
+      img.onerror = () => { preloadedRef.current[url] = false; };
+      img.src = url as string;
+    }
+  }, [slides, index]);
+
   const planNext = useCallback(() => {
     const delay = Math.max(500, config.intervalMs || 3000);
     if (!slides.length) return;
@@ -246,18 +305,25 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     clearTimeout(playTimeout.current);
     const target = slides[next];
     if (target.imageUrl) {
-      const img = new Image();
-      let proceeded = false;
-      const proceed = () => {
-        if (proceeded) return;
-        proceeded = true;
-        setIndex(next);
-        playTimeout.current = setTimeout(planNext, delay);
-      };
-      img.onload = proceed;
-      img.onerror = proceed;
-      img.src = target.imageUrl as string;
-      playTimeout.current = setTimeout(proceed, Math.min(1500, delay));
+      const url = target.imageUrl as string;
+      if (preloadedRef.current[url]) {
+        playTimeout.current = setTimeout(() => {
+          setIndex(next);
+          planNext();
+        }, delay);
+      } else {
+        const img = new Image();
+        let proceeded = false;
+        const proceed = () => {
+          if (proceeded) return;
+          proceeded = true;
+          setIndex(next);
+          playTimeout.current = setTimeout(planNext, delay);
+        };
+        img.onload = proceed;
+        img.onerror = proceed;
+        img.src = url;
+      }
     } else {
       playTimeout.current = setTimeout(() => {
         setIndex(next);
@@ -339,6 +405,7 @@ function ConfigPanel({ t, config, setConfig }: { t: any, config: ICarouselConfig
 
   const fieldOptions = useMemo(() => fields.map(f => ({ label: f.name, value: f.id })), [fields]);
   const imageFieldOptions = useMemo(() => fields.filter(f => f.type === FieldType.Attachment).map(f => ({ label: f.name, value: f.id })), [fields]);
+  const timeFieldOptions = useMemo(() => fields.map(f => ({ label: f.name, value: f.id })), [fields]);
 
   const onSaveConfig = () => {
     dashboard.saveConfig({
@@ -355,6 +422,12 @@ function ConfigPanel({ t, config, setConfig }: { t: any, config: ICarouselConfig
         </Item>
         <Item label={t('carousel.label.view')}>
           <Select value={config.viewId} optionList={views} onChange={(v) => setConfig({ ...config, viewId: v == null ? undefined : String(v) })} style={{ width: '100%' }} />
+        </Item>
+        <Item label={'时间字段'}>
+          <Select value={config.timeFieldId} optionList={timeFieldOptions} onChange={(v) => setConfig({ ...config, timeFieldId: v == null ? undefined : String(v) })} style={{ width: '100%' }} />
+        </Item>
+        <Item label={'最新优先'}>
+          <Switch checked={!!config.latestFirst} onChange={(v) => setConfig({ ...config, latestFirst: !!v })} />
         </Item>
         <Item label={t('carousel.label.titleField')}>
           <Select value={config.titleFieldId} optionList={fieldOptions} onChange={(v) => setConfig({ ...config, titleFieldId: v == null ? undefined : String(v) })} style={{ width: '100%' }} />
