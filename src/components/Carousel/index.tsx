@@ -87,6 +87,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
   const { t } = useTranslation();
   const [slides, setSlides] = useState<ISlide[]>([]);
   const [index, setIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
   const playRef = useRef<any>();
   const playTimeout = useRef<any>();
   const refreshRef = useRef<any>();
@@ -178,6 +179,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
 
   const loadData = async () => {
     try {
+      setLoading(true);
       let table: ITable | null = null;
       if (config.tableId) table = await bitable.base.getTableById(config.tableId);
       if (!table) table = await bitable.base.getActiveTable();
@@ -240,6 +242,14 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
       }
       const takeIds = sortedIds.slice(0, Math.max(1, config.limit || 10));
 
+      const sameIds = lastIdsRef.current.length === takeIds.length && lastIdsRef.current.every((id, i) => id === takeIds[i]);
+      if (sameIds && slides.length) {
+        lastIdsRef.current = takeIds.slice();
+        setIndex(v => Math.min(v, slides.length ? slides.length - 1 : 0));
+        setLoading(false);
+        return;
+      }
+
       const result: ISlide[] = await Promise.all(takeIds.map(async (rid) => {
         try {
           let title = '';
@@ -292,9 +302,10 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
       } else {
         setIndex(v => Math.min(v, result.length ? result.length - 1 : 0));
       }
+      setLoading(false);
     } catch (e) {
       console.error(e);
-      setSlides([]);
+      setLoading(false);
     }
   };
 
@@ -349,10 +360,9 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
           setIndex(next);
           playTimeout.current = setTimeout(planNext, delay);
         };
-        const timeout = setTimeout(proceed, Math.min(1500, Math.max(600, delay - 800)));
         img.decoding = 'async' as any;
-        img.onload = () => { clearTimeout(timeout); proceed(); };
-        img.onerror = () => { clearTimeout(timeout); proceed(); };
+        img.onload = proceed;
+        img.onerror = proceed;
         img.src = url;
       }
     } else {
@@ -373,6 +383,15 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     };
   }, [slides.length, config.intervalMs, planNext]);
 
+  if (loading && !slides.length) {
+    return (
+      <div className='carousel-container'>
+        <div className='carousel-slide'>
+          <div className='carousel-title' style={{ color }}>加载中...</div>
+        </div>
+      </div>
+    );
+  }
   if (!slides.length) {
     return (
       <div className='carousel-container'>
@@ -388,7 +407,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
   return (
     <div className='carousel-container'>
       <div className='carousel-slide' style={{ color }}>
-        {current.imageUrl ? <img className='carousel-image' src={current.imageUrl} decoding='async' loading='eager' fetchPriority='high' /> : null}
+        {current.imageUrl ? <img className='carousel-image' src={current.imageUrl} decoding='async' loading='eager' {...({ fetchpriority: 'high' } as any)} /> : null}
         {current.title ? <div className='carousel-title'>{current.title}</div> : null}
         {current.desc ? <div className='carousel-desc'>{current.desc}</div> : null}
       </div>
