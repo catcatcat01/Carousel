@@ -22,10 +22,5 @@
   "carousel.label.interval": "切替間隔(ms)",
   "carousel.label.refresh": "更新間隔(ms)",
   "carousel.label.indicator": "インジケーターを表示",
-  "carousel.label.pageInterval": "外側ページ間隔(ms)",
-  "carousel.label.channels": "チャンネルタイプ",
-  "carousel.placeholder.channelName": "チャンネル名",
-  "carousel.placeholder.filterField": "フィルターフィールド",
-  "carousel.placeholder.filterValue": "フィルター値",
   "carousel.preview.empty": "データソースを設定してください"
 }

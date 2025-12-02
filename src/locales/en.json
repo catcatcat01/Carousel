@@ -22,10 +22,5 @@
   "carousel.label.interval": "Switch Interval (ms)",
   "carousel.label.refresh": "Refresh Interval (ms)",
   "carousel.label.indicator": "Show Indicators",
-  "carousel.label.pageInterval": "Outer Page Interval (ms)",
-  "carousel.label.channels": "Channel Types",
-  "carousel.placeholder.channelName": "Channel Name",
-  "carousel.placeholder.filterField": "Filter Field",
-  "carousel.placeholder.filterValue": "Filter Value",
   "carousel.preview.empty": "Please configure data source"
 }

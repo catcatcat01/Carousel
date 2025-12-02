@@ -22,10 +22,5 @@
   "carousel.label.interval": "切换间隔(毫秒)",
   "carousel.label.refresh": "刷新间隔(毫秒)",
   "carousel.label.indicator": "显示指示器",
-  "carousel.label.pageInterval": "外层轮播间隔(毫秒)",
-  "carousel.label.channels": "展示类型配置",
-  "carousel.placeholder.channelName": "类型名称",
-  "carousel.placeholder.filterField": "筛选字段",
-  "carousel.placeholder.filterValue": "筛选值",
   "carousel.preview.empty": "请配置数据源"
 }
