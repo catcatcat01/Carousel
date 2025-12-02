@@ -39,6 +39,14 @@
     overflow: hidden;
 }
 
+.carousel-loading {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .carousel-slide {
     display: grid;
     grid-template-columns: 1fr;

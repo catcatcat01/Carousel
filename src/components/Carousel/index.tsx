@@ -92,6 +92,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
   const playTimeout = useRef<any>();
   const refreshRef = useRef<any>();
   const lastIdsRef = useRef<string[]>([]);
+  const cacheRef = useRef<Record<string, ISlide>>({});
 
   const color = config.color || 'var(--ccm-chart-N700)';
 
@@ -242,15 +243,69 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
       }
       const takeIds = sortedIds.slice(0, Math.max(1, config.limit || 10));
 
-      const sameIds = lastIdsRef.current.length === takeIds.length && lastIdsRef.current.every((id, i) => id === takeIds[i]);
-      if (sameIds && slides.length) {
+      const idsChanged = !(lastIdsRef.current.length === takeIds.length && lastIdsRef.current.every((id, i) => id === takeIds[i]));
+      const cachedNow: ISlide[] = takeIds.map(rid => cacheRef.current[rid]).filter(Boolean) as ISlide[];
+      if (cachedNow.length) {
         lastIdsRef.current = takeIds.slice();
-        setIndex(v => Math.min(v, slides.length ? slides.length - 1 : 0));
+        setSlides(cachedNow);
+        setIndex(v => idsChanged ? 0 : Math.min(v, cachedNow.length ? cachedNow.length - 1 : 0));
         setLoading(false);
-        return;
+      } else {
+        const firstId = takeIds[0];
+        let firstSlide: ISlide = { id: firstId, title: '', desc: '', imageUrl: undefined };
+        try {
+          let title = '';
+          let desc = '';
+          let imageUrl: string | undefined = undefined;
+          if (firstId) {
+            const tasks: Promise<void>[] = [];
+            tasks.push((async () => {
+              if (titleField) {
+                try { const val = await (titleField as any).getValue(firstId); title = toPlainText(val); } catch (_) {}
+              }
+            })());
+            tasks.push((async () => {
+              if (descField) {
+                try { const val = await (descField as any).getValue(firstId); desc = toPlainText(val); } catch (_) {}
+              }
+            })());
+            tasks.push((async () => {
+              if (imageField) {
+                try {
+                  const raw = await (imageField as any).getValue(firstId);
+                  imageUrl = pickAttachmentUrl(raw);
+                  if (!imageUrl) {
+                    try {
+                      const urls: string[] = await imageField.getAttachmentUrls(firstId);
+                      imageUrl = urls && urls.length ? urls[0] : undefined;
+                    } catch (_) {}
+                  }
+                } catch (_) {}
+              }
+            })());
+            await Promise.all(tasks);
+            firstSlide = { id: firstId, title, desc, imageUrl };
+            cacheRef.current[firstId] = firstSlide;
+          }
+          if (firstSlide.imageUrl) {
+            await new Promise<void>((resolve) => {
+              const img = new Image();
+              img.decoding = 'async' as any;
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+              img.src = firstSlide.imageUrl as string;
+            });
+          }
+        } catch (_) {}
+        lastIdsRef.current = takeIds.slice();
+        setSlides(firstSlide.id ? [firstSlide] : []);
+        setIndex(0);
+        setLoading(false);
       }
 
       const result: ISlide[] = await Promise.all(takeIds.map(async (rid) => {
+        const cached = cacheRef.current[rid];
+        if (cached) return cached;
         try {
           let title = '';
           let desc = '';
@@ -289,7 +344,9 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
             })(),
           ]);
 
-          return { id: rid, title, desc, imageUrl };
+          const slide = { id: rid, title, desc, imageUrl };
+          cacheRef.current[rid] = slide;
+          return slide;
         } catch (_) {
           return { id: rid, title: '', desc: '', imageUrl: undefined };
         }
@@ -385,10 +442,8 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
 
   if (loading && !slides.length) {
     return (
-      <div className='carousel-container'>
-        <div className='carousel-slide'>
-          <div className='carousel-title' style={{ color }}>加载中...</div>
-        </div>
+      <div className='carousel-loading'>
+        <div className='carousel-title' style={{ color }}>加载中...</div>
       </div>
     );
   }
