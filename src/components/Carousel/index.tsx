@@ -138,14 +138,14 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     const arr = Array.isArray(val) ? val : [val];
     for (const item of arr) {
       if (!item || typeof item !== 'object') continue;
-      const cand = (item as any).url
-        || (item as any).fsUrl
-        || (item as any).fs_url
-        || (item as any).thumbnailUrl
+      const cand = (item as any).thumbnailUrl
         || (item as any).thumbnail_url
-        || (item as any).picUrl
         || (item as any).previewUrl
-        || (item as any).preview_url;
+        || (item as any).preview_url
+        || (item as any).picUrl
+        || (item as any).url
+        || (item as any).fsUrl
+        || (item as any).fs_url;
       if (typeof cand === 'string' && cand) return cand;
     }
     return undefined;
@@ -219,56 +219,63 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
 
       let sortedIds = recordIds.slice();
       if (timeField) {
-        const pairs: { id: string, ts: number }[] = [];
-        for (const rid of sortedIds) {
+        const pairs: { id: string, ts: number }[] = await Promise.all(sortedIds.map(async (rid) => {
           let ts = 0;
           try {
             const v = await (timeField as any).getValue(rid);
             ts = toTimestamp(v);
           } catch (_) {}
-          pairs.push({ id: rid, ts });
-        }
+          return { id: rid, ts };
+        }));
         pairs.sort((a, b) => (config.latestFirst ? b.ts - a.ts : a.ts - b.ts));
         sortedIds = pairs.map(p => p.id);
       }
       const takeIds = sortedIds.slice(0, Math.max(1, config.limit || 10));
 
-      const result: ISlide[] = [];
-      for (const rid of takeIds) {
+      const result: ISlide[] = await Promise.all(takeIds.map(async (rid) => {
         try {
           let title = '';
           let desc = '';
           let imageUrl: string | undefined = undefined;
 
-          if (titleField) {
-            try {
-              const val = await (titleField as any).getValue(rid);
-              title = toPlainText(val);
-            } catch (_) {}
-          }
-          if (descField) {
-            try {
-              const val = await (descField as any).getValue(rid);
-              desc = toPlainText(val);
-            } catch (_) {}
-          }
-          if (imageField) {
-            try {
-              const urls: string[] = await imageField.getAttachmentUrls(rid);
-              imageUrl = urls && urls.length ? urls[0] : undefined;
-            } catch (_) {
-              try {
-                const raw = await (imageField as any).getValue(rid);
-                imageUrl = pickAttachmentUrl(raw);
-              } catch (_) {}
-            }
-          }
+          await Promise.all([
+            (async () => {
+              if (titleField) {
+                try {
+                  const val = await (titleField as any).getValue(rid);
+                  title = toPlainText(val);
+                } catch (_) {}
+              }
+            })(),
+            (async () => {
+              if (descField) {
+                try {
+                  const val = await (descField as any).getValue(rid);
+                  desc = toPlainText(val);
+                } catch (_) {}
+              }
+            })(),
+            (async () => {
+              if (imageField) {
+                try {
+                  const raw = await (imageField as any).getValue(rid);
+                  imageUrl = pickAttachmentUrl(raw);
+                  if (!imageUrl) {
+                    try {
+                      const urls: string[] = await imageField.getAttachmentUrls(rid);
+                      imageUrl = urls && urls.length ? urls[0] : undefined;
+                    } catch (_) {}
+                  }
+                } catch (_) {}
+              }
+            })(),
+          ]);
 
-          result.push({ id: rid, title, desc, imageUrl });
+          return { id: rid, title, desc, imageUrl };
         } catch (_) {
-          result.push({ id: rid, title: '', desc: '', imageUrl: undefined });
+          return { id: rid, title: '', desc: '', imageUrl: undefined };
         }
-      }
+      }));
       const same = lastIdsRef.current.length === takeIds.length && lastIdsRef.current.every((id, i) => id === takeIds[i]);
       lastIdsRef.current = takeIds.slice();
       setSlides(result);
@@ -295,13 +302,20 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
   const preloadedRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
     if (!slides.length) return;
+    const candidates: (string | undefined)[] = [];
     const next = (index + 1) % slides.length;
-    const url = slides[next].imageUrl;
-    if (url && !preloadedRef.current[url]) {
-      const img = new Image();
-      img.onload = () => { preloadedRef.current[url] = true; };
-      img.onerror = () => { preloadedRef.current[url] = false; };
-      img.src = url as string;
+    const next2 = (index + 2) % slides.length;
+    candidates.push(slides[index]?.imageUrl);
+    candidates.push(slides[next]?.imageUrl);
+    if (slides.length > 2) candidates.push(slides[next2]?.imageUrl);
+    for (const url of candidates) {
+      if (url && !preloadedRef.current[url]) {
+        const img = new Image();
+        img.decoding = 'async' as any;
+        img.onload = () => { preloadedRef.current[url!] = true; };
+        img.onerror = () => { preloadedRef.current[url!] = false; };
+        img.src = url as string;
+      }
     }
   }, [slides, index]);
 
@@ -327,8 +341,10 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
           setIndex(next);
           playTimeout.current = setTimeout(planNext, delay);
         };
-        img.onload = proceed;
-        img.onerror = proceed;
+        const timeout = setTimeout(proceed, Math.min(1500, Math.max(600, delay - 800)));
+        img.decoding = 'async' as any;
+        img.onload = () => { clearTimeout(timeout); proceed(); };
+        img.onerror = () => { clearTimeout(timeout); proceed(); };
         img.src = url;
       }
     } else {
@@ -364,7 +380,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
   return (
     <div className='carousel-container'>
       <div className='carousel-slide' style={{ color }}>
-        {current.imageUrl ? <img className='carousel-image' src={current.imageUrl} /> : null}
+        {current.imageUrl ? <img className='carousel-image' src={current.imageUrl} decoding='async' loading='eager' /> : null}
         {current.title ? <div className='carousel-title'>{current.title}</div> : null}
         {current.desc ? <div className='carousel-desc'>{current.desc}</div> : null}
       </div>
