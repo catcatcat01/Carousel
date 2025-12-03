@@ -178,6 +178,31 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     return 0;
   };
 
+  const refreshImageUrl = async (rid: string) => {
+    try {
+      let table: ITable | null = null;
+      if (config.tableId) table = await bitable.base.getTableById(config.tableId);
+      if (!table) table = await bitable.base.getActiveTable();
+      if (!config.imageFieldId) return;
+      let imageField: IAttachmentField | null = null;
+      try {
+        imageField = await (table as any).getField(config.imageFieldId) as IAttachmentField;
+      } catch (_) {}
+      if (!imageField) return;
+      let newUrl: string | undefined = undefined;
+      try {
+        const urls: string[] = await imageField.getAttachmentUrls(rid);
+        newUrl = urls && urls.length ? urls[0] : undefined;
+      } catch (_) {}
+      if (!newUrl) return;
+      preloadedRef.current[newUrl] = false;
+      const prev = cacheRef.current[rid];
+      const updated: ISlide = { id: rid, title: prev?.title || '', desc: prev?.desc || '', imageUrl: newUrl };
+      cacheRef.current[rid] = updated;
+      setSlides(list => list.map(s => (s.id === rid ? updated : s)));
+    } catch (_) {}
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -419,7 +444,19 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
         };
         img.decoding = 'async' as any;
         img.onload = proceed;
-        img.onerror = proceed;
+        img.onerror = async () => {
+          await refreshImageUrl(target.id);
+          const newer = cacheRef.current[target.id]?.imageUrl;
+          if (newer && newer !== url) {
+            const img2 = new Image();
+            img2.decoding = 'async' as any;
+            img2.onload = proceed;
+            img2.onerror = proceed;
+            img2.src = newer as string;
+          } else {
+            proceed();
+          }
+        };
         img.src = url;
       }
     } else {
@@ -462,7 +499,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
   return (
     <div className='carousel-container'>
       <div className='carousel-slide' style={{ color }}>
-        {current.imageUrl ? <img className='carousel-image' src={current.imageUrl} decoding='async' loading='eager' {...({ fetchpriority: 'high' } as any)} /> : null}
+        {current.imageUrl ? <img className='carousel-image' src={current.imageUrl} decoding='async' loading='eager' {...({ fetchpriority: 'high' } as any)} onError={() => { refreshImageUrl(current.id); }} /> : null}
         {current.title ? <div className='carousel-title'>{current.title}</div> : null}
         {current.desc ? <div className='carousel-desc'>{current.desc}</div> : null}
       </div>
