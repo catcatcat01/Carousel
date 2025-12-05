@@ -33,8 +33,28 @@ export function useConfig(updateConfig: (data: any) => void) {
     if (isCreate) {
       return
     }
-    // 初始化获取配置
-    dashboard.getConfig().then(updateConfig);
+    let active = true
+    const tryGet = (delay?: number) => {
+      const exec = () => {
+        dashboard.getConfig().then((cfg) => {
+          if (!active) return
+          updateConfig(cfg)
+        }).catch(() => {
+          if (!active) return
+          const nextDelay = Math.min((delay || 200) * 2, 2000)
+          setTimeout(() => tryGet(nextDelay), nextDelay)
+        })
+      }
+      if (delay) {
+        setTimeout(exec, delay)
+      } else {
+        exec()
+      }
+    }
+    tryGet()
+    return () => {
+      active = false
+    }
   }, []);
 
 
