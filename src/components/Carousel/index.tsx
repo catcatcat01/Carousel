@@ -438,6 +438,7 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     }
   }, [slides, index]);
 
+  
   const planNext = useCallback(() => {
     const delay = Math.max(500, config.intervalMs || 3000);
     if (!slides.length) return;
