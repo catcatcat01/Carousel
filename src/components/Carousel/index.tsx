@@ -391,11 +391,29 @@ function CarouselView({ config, isConfig }: { config: ICarouselConfig, isConfig:
     }
   };
 
+  const waitForBaseReady = async (): Promise<boolean> => {
+    for (let i = 0; i < 20; i++) {
+      try {
+        const list = await bitable.base.getTableList();
+        if (Array.isArray(list)) return true;
+      } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    return false;
+  };
+
   useEffect(() => {
-    loadData();
-    if (refreshRef.current) clearInterval(refreshRef.current);
-    refreshRef.current = setInterval(loadData, Math.max(3000, config.refreshMs || 8000));
+    let stopped = false;
+    const start = async () => {
+      const ok = await waitForBaseReady();
+      if (!ok || stopped) return;
+      await loadData();
+      if (refreshRef.current) clearInterval(refreshRef.current);
+      refreshRef.current = setInterval(loadData, Math.max(3000, config.refreshMs || 8000));
+    };
+    start();
     return () => {
+      stopped = true;
       if (refreshRef.current) clearInterval(refreshRef.current);
     };
   }, [config.tableId, config.viewId, config.titleFieldId, config.descFieldId, config.imageFieldId, config.limit, config.refreshMs]);
